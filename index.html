@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GAMA AI - Global Combat Intelligence</title>
+    <style>
+        :root {
+            --bg-color: #0d0e15;
+            --card-bg: #161824;
+            --accent-purple: #8b5cf6;
+            --accent-green: #10b981;
+            --text-main: #f3f4f6;
+            --text-dim: #9ca3af;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            background-color: var(--card-bg);
+            border: 1px solid rgba(139, 92, 246, 0.2);
+            border-radius: 16px;
+            padding: 40px;
+            width: 100%;
+            max-width: 500px;
+            box-shadow: 0 0 30px rgba(139, 92, 246, 0.15);
+            text-align: center;
+        }
+
+        .logo {
+            font-size: 2.5rem;
+            font-weight: 800;
+            background: linear-gradient(135deg, var(--accent-purple), var(--accent-green));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 10px;
+            letter-spacing: 2px;
+        }
+
+        .status-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            background: rgba(16, 185, 129, 0.1);
+            color: var(--accent-green);
+            padding: 6px 16px;
+            border-radius: 20px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            margin-bottom: 30px;
+            border: 1px solid rgba(16, 185, 129, 0.3);
+        }
+
+        .dot {
+            width: 8px;
+            height: 8px;
+            background-color: var(--accent-green);
+            border-radius: 50%;
+            box-shadow: 0 0 8px var(--accent-green);
+        }
+
+        .description {
+            color: var(--text-dim);
+            font-size: 0.95rem;
+            line-height: 1.5;
+            margin-bottom: 30px;
+        }
+
+        .key-box {
+            background: rgba(0, 0, 0, 0.4);
+            border: 1px dashed var(--accent-purple);
+            border-radius: 10px;
+            padding: 15px;
+            font-family: monospace;
+            font-size: 1.2rem;
+            color: var(--accent-green);
+            margin-bottom: 20px;
+            word-break: break-all;
+            display: none;
+        }
+
+        .btn {
+            background: linear-gradient(135deg, var(--accent-purple), #6d28d9);
+            color: white;
+            border: none;
+            padding: 14px 28px;
+            font-size: 1rem;
+            font-weight: 600;
+            border-radius: 8px;
+            cursor: pointer;
+            width: 100%;
+            transition: all 0.2s ease;
+            box-shadow: 0 4px 15px rgba(139, 92, 246, 0.4);
+        }
+
+        .btn:hover {
+            opacity: 0.9;
+            transform: translateY(-2px);
+        }
+
+        .btn-copy {
+            background: rgba(255, 255, 255, 0.1);
+            box-shadow: none;
+            margin-top: 10px;
+            display: none;
+        }
+
+        .btn-copy:hover {
+            background: rgba(255, 255, 255, 0.2);
+        }
+
+        .footer {
+            margin-top: 30px;
+            font-size: 0.75rem;
+            color: var(--text-dim);
+        }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <div class="logo">GAMA AI</div>
+        <div class="status-badge">
+            <span class="dot"></span> GLOBAL ENGINE ONLINE (100Hz)
+        </div>
+
+        <p class="description">
+            Kişiye özel bulut boru hattınıza erişmek ve kolektif yapay zekaya bağlanmak için anahtarınızı oluşturun.
+        </p>
+
+        <div id="keyDisplay" class="key-box">GAMA-XXXX-XXXX</div>
+
+        <button id="generateBtn" class="btn" onclick="generateKey()">Get GAMA Key</button>
+        <button id="copyBtn" class="btn btn-copy" onclick="copyKey()">Anahtarı Kopyala 📋</button>
+
+        <div class="footer">
+            GAMA AI Core v2.0 • Collective Intelligence Network
+        </div>
+    </div>
+
+    <script>
+        function generateKey() {
+            const randomPart = () => Math.random().toString(36).substring(2, 6).toUpperCase();
+            const newKey = `GAMA-${randomPart()}-${randomPart()}`;
+            
+            const keyBox = document.getElementById('keyDisplay');
+            const copyBtn = document.getElementById('copyBtn');
+            const genBtn = document.getElementById('generateBtn');
+
+            keyBox.innerText = newKey;
+            keyBox.style.display = 'block';
+            copyBtn.style.display = 'block';
+            genBtn.innerText = 'Yeni Anahtar Üret 🔄';
+        }
+
+        function copyKey() {
+            const keyText = document.getElementById('keyDisplay').innerText;
+            navigator.clipboard.writeText(keyText);
+            
+            const copyBtn = document.getElementById('copyBtn');
+            copyBtn.innerText = 'Kopyalandı! ✅';
+            setTimeout(() => {
+                copyBtn.innerText = 'Anahtarı Kopyala 📋';
+            }, 2000);
+        }
+    </script>
+
+</body>
+</html>
