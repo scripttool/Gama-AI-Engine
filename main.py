@@ -1,63 +1,83 @@
-from fastapi import FastAPI, Request
-from fastapi.middleware.cors import CORSMiddleware
+import asyncio
+import json
+import sqlite3
 import random
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+import uvicorn
 
 app = FastAPI()
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# --- HAFIZA VERİTABANI ---
+conn = sqlite3.connect("gama_memory.db", check_same_thread=False)
+cursor = conn.cursor()
+cursor.execute("""
+    CREATE TABLE IF NOT EXISTS q_table (
+        state TEXT, action TEXT, q_value REAL,
+        PRIMARY KEY (state, action)
+    )
+""")
+conn.commit()
 
-# Yapay zekanın sahip olduğu kaslar (Aksiyonlar)
-ACTIONS = ["MOVE_FORWARD", "MOVE_BACKWARD", "MOVE_LEFT", "MOVE_RIGHT", "ATTACK_M1", "BLOCK"]
+ACTIONS = ["APPROACH", "RETREAT", "FLANK_LEFT", "FLANK_RIGHT", "ATTACK_M1", "BLOCK"]
 
-# Basit bir yapay zeka hafızası (İleride veri tabanına bağlanabilir)
-# Her oyuncunun durumunu hafızada tutmak için sözlük
-ai_memory = {}
+def get_q_value(state, action):
+    cursor.execute("SELECT q_value FROM q_table WHERE state = ? AND action = ?", (state, action))
+    row = cursor.fetchone()
+    return row[0] if row else 0.0
+
+def update_q_value(state, action, new_q):
+    cursor.execute("""
+        INSERT INTO q_table (state, action, q_value)
+        VALUES (?, ?, ?)
+        ON CONFLICT(state, action) DO UPDATE SET q_value = excluded.q_value
+    """, (state, action, new_q))
+    conn.commit()
 
 @app.get("/")
-async def root():
-    return {"status": "Gama AI Brain is Active and Evolving"}
+def home():
+    return {"status": "GAMA AI Global Backend Active", "version": "2.0-WebSocket"}
 
-@app.api_route("/predict", methods=["GET", "POST", "HEAD"])
-async def predict(request: Request):
-    if request.method == "HEAD":
-        return {"status": "ok"}
-
-    # Roblox'tan gelen duyu organı verilerini al
-    combat_data = {}
-    if request.method == "POST":
-        try: combat_data = await request.json()
-        except: pass
-    elif request.method == "GET":
-        combat_data = dict(request.query_params)
-
-    # Oyuncu verilerini ayıkla (varsayılan değerler ile)
-    current_health = float(combat_data.get("Health", 100))
-    in_combat = bool(combat_data.get("InCombat", False))
+# 📡 KİŞİYE ÖZEL KESİNTİSİZ WEBSOCKET ANTENİ
+@app.websocket("/ws/{user_key}")
+async def websocket_endpoint(websocket: WebSocket, user_key: str):
+    await websocket.accept()
+    print(f"📡 [GAMA-AI] Yeni Kullanıcı Bağlandı! Key: {user_key}")
     
-    # -------------------------------------------------------------
-    # İLK KIVILCIM: RASTGELE DENEME VE ÖĞRENME ALGORİTMASI (Epsilon-Greedy)
-    # -------------------------------------------------------------
-    # Yapay zeka %70 ihtimalle tamamen rastgele yeni tuşlar deneyecek (Keşif)
-    # %30 ihtimalle öğrendiği en iyi hamleyi yapacak (Sömürü)
-    
-    chosen_action = random.choice(ACTIONS)
-    
-    # Küçük bir mantık (Kıvılcımı hızlandırmak için): 
-    # Eğer canı bir önceki adıma göre düştüyse yapay zekayı uyaralım
-    if in_combat and current_health < 50:
-        # Canı azsa defansif aksiyonların seçilme şansını biraz artıralım (Yapay içgüdü)
-        chosen_action = random.choice(["MOVE_BACKWARD", "BLOCK", "ATTACK_M1"])
+    try:
+        while True:
+            # Roblox'tan gelen anlık 50Hz paketi oku
+            raw_data = await websocket.receive_text()
+            data = json.loads(raw_data)
 
-    # Roblox'a fırlatılacak çıktı komutu
-    # duration: Tuşa kaç saniye basılı tutulacağı (Senin istediğin gibi)
-    return {
-        "action": chosen_action,
-        "duration": round(random.uniform(0.5, 1.5), 2),
-        "turn_degree": random.randint(-45, 45)
-    }
+            dist_status = "CLOSE" if data.get("enemy_distance", 999) < 12 else "FAR"
+            threat_status = "THREAT" if (data.get("enemy_holding_item") or data.get("dangerous_asset_nearby")) else "CLEAR"
+            state_str = f"{dist_status}_{threat_status}"
+
+            # Q-Learning Stratejisi
+            if random.random() < 0.15:
+                chosen_action = random.choice(ACTIONS)
+            else:
+                q_values = {act: get_q_value(state_str, act) for act in ACTIONS}
+                max_q = max(q_values.values())
+                best_actions = [act for act, q in q_values.items() if q == max_q]
+                chosen_action = random.choice(best_actions)
+
+            nav_mode = "APPROACH"
+            if chosen_action == "RETREAT" or threat_status == "THREAT":
+                nav_mode = "RETREAT"
+            elif chosen_action == "FLANK_LEFT":
+                nav_mode = "FLANK_LEFT"
+
+            # Kesintisiz yanıtı fırlat (HTTP gecikmesi yok!)
+            response = {
+                "user_key": user_key,
+                "nav_mode": nav_mode,
+                "action": chosen_action
+            }
+            await websocket.send_text(json.dumps(response))
+
+    except WebSocketDisconnect:
+        print(f"❌ [GAMA-AI] Kullanıcı Ayrıldı: {user_key}")
+
+if __name__ == "__main__":
+    uvicorn.run(app, host="0.0.0.0", port=8000)
