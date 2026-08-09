@@ -1,10 +1,11 @@
 import json
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
 
 app = FastAPI()
 
-# Roblox ve Dış Bağlantılara Tam İzin (CORS Fix)
+# Tüm Platformlar İçin Tam İzin
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -13,37 +14,29 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-class ConnectionManager:
-    def __init__(self):
-        self.active_connections: list[WebSocket] = []
-
-    async def connect(self, websocket: WebSocket):
-        await websocket.accept()
-        self.active_connections.append(websocket)
-
-    def disconnect(self, websocket: WebSocket):
-        if websocket in self.active_connections:
-            self.active_connections.remove(websocket)
-
-manager = ConnectionManager()
+class FrameData(BaseModel):
+    my_position: dict
+    enemy_position: dict
+    is_teacher_mode: bool
+    human_action: str
 
 @app.get("/")
 def read_root():
-    return {"status": "Gama AI Engine Online"}
+    return {"status": "Gama AI Universal Engine Online"}
 
-@app.websocket("/ws")
-async def websocket_endpoint(websocket: WebSocket):
-    await manager.connect(websocket)
-    try:
-        while True:
-            raw_data = await websocket.receive_text()
-            data = json.loads(raw_data)
+# 100 Hz Universal Pipeline Endpoint
+@app.post("/api/v1/stream")
+async def stream_pipeline(data: FrameData):
+    # Otonom Mantık İşleme (Örnek Tepki Mantığı)
+    action = "IDLE"
+    target_pos = data.enemy_position
 
-            # Test Yanıtı
-            response = {"status": "OK", "action": "IDLE"}
-            await websocket.send_text(json.dumps(response))
+    # Eğer düşman yakınsa ve AI Modundaysa
+    if not data.is_teacher_mode:
+        action = "ATTACK_COUNTER"
 
-    except WebSocketDisconnect:
-        manager.disconnect(websocket)
-    except Exception:
-        manager.disconnect(websocket)
+    return {
+        "status": "OK",
+        "action": action,
+        "target_position": target_pos
+    }
