@@ -4,7 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI()
 
-# Roblox ve Harici Bağlantı İzinleri (CORS)
+# Roblox ve Dış Bağlantılara Tam İzin (CORS Fix)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -39,11 +39,8 @@ async def websocket_endpoint(websocket: WebSocket):
             raw_data = await websocket.receive_text()
             data = json.loads(raw_data)
 
-            # Basit Test Cevabı
-            response = {
-                "status": "OK",
-                "action": "IDLE"
-            }
+            # Test Yanıtı
+            response = {"status": "OK", "action": "IDLE"}
             await websocket.send_text(json.dumps(response))
 
     except WebSocketDisconnect:
