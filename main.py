@@ -1,83 +1,85 @@
-import asyncio
-import json
-import sqlite3
-import random
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
-import uvicorn
+import os
+import requests
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel
 
-app = FastAPI()
+app = FastAPI(title="GAMA AI Core API")
 
-# --- HAFIZA VERİTABANI ---
-conn = sqlite3.connect("gama_memory.db", check_same_thread=False)
-cursor = conn.cursor()
-cursor.execute("""
-    CREATE TABLE IF NOT EXISTS q_table (
-        state TEXT, action TEXT, q_value REAL,
-        PRIMARY KEY (state, action)
-    )
-""")
-conn.commit()
+# Upstash Bulut Veritabanı Bilgileri
+UPSTASH_URL = "https://splendid-buzzard-166843.upstash.io"
+UPSTASH_TOKEN = "gQAAAAAAAou7AAIgcDFjNWFiYjNjNGUyMmI0YjQzOTViZTc3YWMyZmM3MjRkYg"
 
-ACTIONS = ["APPROACH", "RETREAT", "FLANK_LEFT", "FLANK_RIGHT", "ATTACK_M1", "BLOCK"]
+HEADERS = {
+    "Authorization": f"Bearer {UPSTASH_TOKEN}"
+}
 
-def get_q_value(state, action):
-    cursor.execute("SELECT q_value FROM q_table WHERE state = ? AND action = ?", (state, action))
-    row = cursor.fetchone()
-    return row[0] if row else 0.0
+# Upstash Yardımcı Fonksiyonları
+def redis_get(key: str):
+    try:
+        response = requests.get(f"{UPSTASH_URL}/get/{key}", headers=HEADERS, timeout=5)
+        if response.status_code == 200:
+            data = response.json()
+            return data.get("result")
+    except Exception as e:
+        print(f"Redis GET hatası: {e}")
+    return None
 
-def update_q_value(state, action, new_q):
-    cursor.execute("""
-        INSERT INTO q_table (state, action, q_value)
-        VALUES (?, ?, ?)
-        ON CONFLICT(state, action) DO UPDATE SET q_value = excluded.q_value
-    """, (state, action, new_q))
-    conn.commit()
+def redis_set(key: str, value: str):
+    try:
+        requests.post(f"{UPSTASH_URL}/set/{key}", headers=HEADERS, data=value, timeout=5)
+    except Exception as e:
+        print(f"Redis SET hatası: {e}")
+
+# Veri Modelleri
+class KeyVerifyRequest(BaseModel):
+    key: str
+
+class CombatDataRequest(BaseModel):
+    key: str
+    opponent_move: str
+    distance: float
+    is_ragdoll: bool
+    ai_action: str
+    reward: float
 
 @app.get("/")
-def home():
-    return {"status": "GAMA AI Global Backend Active", "version": "2.0-WebSocket"}
+def root():
+    return {"status": "ONLINE", "system": "GAMA AI Core (Cloud Memory Active)"}
 
-# 📡 KİŞİYE ÖZEL KESİNTİSİZ WEBSOCKET ANTENİ
-@app.websocket("/ws/{user_key}")
-async def websocket_endpoint(websocket: WebSocket, user_key: str):
-    await websocket.accept()
-    print(f"📡 [GAMA-AI] Yeni Kullanıcı Bağlandı! Key: {user_key}")
-    
+# 1. Roblox Key Doğrulama Endpoint'i
+@app.post("/api/verify-key")
+def verify_key(req: KeyVerifyRequest):
     try:
-        while True:
-            # Roblox'tan gelen anlık 50Hz paketi oku
-            raw_data = await websocket.receive_text()
-            data = json.loads(raw_data)
+        res = requests.get(f"{UPSTASH_URL}/sismember/active_keys/{req.key}", headers=HEADERS, timeout=5)
+        if res.status_code == 200 and res.json().get("result") == 1:
+            return {"valid": True, "message": "Key geçerli. GAMA AI Oturumu Başlatıldı."}
+    except Exception as e:
+        print(f"Key doğrulama hatası: {e}")
 
-            dist_status = "CLOSE" if data.get("enemy_distance", 999) < 12 else "FAR"
-            threat_status = "THREAT" if (data.get("enemy_holding_item") or data.get("dangerous_asset_nearby")) else "CLEAR"
-            state_str = f"{dist_status}_{threat_status}"
+    return {"valid": False, "message": "Geçersiz veya süresi dolmuş Key!"}
 
-            # Q-Learning Stratejisi
-            if random.random() < 0.15:
-                chosen_action = random.choice(ACTIONS)
-            else:
-                q_values = {act: get_q_value(state_str, act) for act in ACTIONS}
-                max_q = max(q_values.values())
-                best_actions = [act for act, q in q_values.items() if q == max_q]
-                chosen_action = random.choice(best_actions)
+# 2. Dövüş Verisi İşleme & Öğrenme (Kalıcı Bulut Hafızası)
+@app.post("/api/learn-combat")
+def learn_combat(data: CombatDataRequest):
+    key_check = verify_key(KeyVerifyRequest(key=data.key))
+    if not key_check.get("valid"):
+        raise HTTPException(status_code=401, detail="Geçersiz Key!")
 
-            nav_mode = "APPROACH"
-            if chosen_action == "RETREAT" or threat_status == "THREAT":
-                nav_mode = "RETREAT"
-            elif chosen_action == "FLANK_LEFT":
-                nav_mode = "FLANK_LEFT"
+    # AI Öğrenme Hafızası Kaydı
+    state_key = f"gama_brain:{data.opponent_move}:{round(data.distance, 1)}"
+    
+    existing_score = redis_get(state_key)
+    current_score = float(existing_score) if existing_score else 0.0
+    
+    # Tecrübe güncellemesi
+    new_score = current_score + (data.reward * 0.1)
+    
+    # Bulut hafızasına kaydet
+    redis_set(state_key, str(new_score))
 
-            # Kesintisiz yanıtı fırlat (HTTP gecikmesi yok!)
-            response = {
-                "user_key": user_key,
-                "nav_mode": nav_mode,
-                "action": chosen_action
-            }
-            await websocket.send_text(json.dumps(response))
-
-    except WebSocketDisconnect:
-        print(f"❌ [GAMA-AI] Kullanıcı Ayrıldı: {user_key}")
-
-if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    return {
+        "status": "success",
+        "learned_state": state_key,
+        "updated_score": new_score,
+        "message": "GAMA AI tecrübeyi buluta kaydetti!"
+    }
