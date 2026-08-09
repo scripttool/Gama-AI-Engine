@@ -4,7 +4,7 @@ import requests
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
-app = FastAPI(title="GAMA AI Core API")
+app = FastAPI(title="GAMA AI Core - Live Decision Engine")
 
 UPSTASH_URL = "https://splendid-buzzard-166843.upstash.io"
 UPSTASH_TOKEN = "gQAAAAAAAou7AAIgcDFjNWFiYjNjNGUyMmI0YjQzOTViZTc3YWMyZmM3MjRkYg"
@@ -32,63 +32,52 @@ def redis_set(key: str, value: str):
 class KeyVerifyRequest(BaseModel):
     key: str
 
-class CombatDataRequest(BaseModel):
+class LivePositionData(BaseModel):
     key: str
-    opponent_move: str
-    distance: float
-    is_ragdoll: bool
-    ai_action: str
-    reward: float
+    my_position: dict # {"x": 10.5, "y": 3.0, "z": -45.2}
+    enemy_position: dict # {"x": 15.0, "y": 3.0, "z": -40.0}
+    enemy_velocity: dict # {"x": 1.2, "y": 0, "z": -5.0}
 
 @app.get("/")
 def root():
-    return {"status": "ONLINE", "system": "GAMA AI Core (Cloud Memory Active)"}
+    return {"status": "ONLINE", "system": "GAMA AI Core (Command & Positioning Engine Active)"}
 
-# KEY DOĞRULAMA MOTORU (Siteden alınan tüm key formatlarıyla %100 uyumlu)
 @app.post("/api/verify-key")
 def verify_key(req: KeyVerifyRequest):
     input_key = req.key.strip()
-    
-    # 1. Doğrudan key kaydı var mı kontrol et
-    direct_check = redis_get(f"valid_key:{input_key}")
-    if direct_check:
-        return {"valid": True, "message": "Key Geçerli."}
-
-    # 2. Upstash üzerindeki tüm cihaz token'larını tara
-    try:
-        keys_res = requests.get(f"{UPSTASH_URL}/keys/user_token:*", headers=HEADERS, timeout=5)
-        if keys_res.status_code == 200:
-            token_keys = keys_res.json().get("result", [])
-            for t_key in token_keys:
-                val = redis_get(t_key)
-                if val:
-                    try:
-                        data = json.loads(val) if isinstance(val, str) else val
-                        if data.get("key") == input_key:
-                            return {"valid": True, "message": "Key Geçerli. GAMA AI Oturumu Başlatıldı."}
-                    except Exception:
-                        continue
-    except Exception as e:
-        print(f"Key Arama Hatası: {e}")
-
-    # Fallback: Format GAMA- ile başlıyorsa kabul et (Sistem kesintisiz çalışsın diye)
     if input_key.startswith("GAMA-"):
-        return {"valid": True, "message": "Key Doğrulandı."}
+        return {"valid": True, "message": "Key Doğrulandı. AI Merkezi Aktif."}
+    return {"valid": False, "message": "Geçersiz Key!"}
 
-    return {"valid": False, "message": "Geçersiz veya süresi dolmuş Key!"}
+# 🎯 CANLI KONUM ANALİZİ VE ANLIK KARAR ÜRETİCİ ENGINE
+@app.post("/api/live-decision")
+def live_decision(data: LivePositionData):
+    # Düşmanın hareket vektörü ve mesafesini hesapla
+    dx = data.enemy_position["x"] - data.my_position["x"]
+    dz = data.enemy_position["z"] - data.my_position["z"]
+    distance = (dx**2 + dz**2) ** 0.5
 
-# DÖVÜŞ VERİSİ İŞLEME & BULUT ÖĞRENMESİ
-@app.post("/api/learn-combat")
-def learn_combat(data: CombatDataRequest):
-    state_key = f"gama_brain:{data.opponent_move}:{round(data.distance, 1)}"
-    existing_score = redis_get(state_key)
-    current_score = float(existing_score) if existing_score else 0.0
-    new_score = current_score + (data.reward * 0.1)
-    redis_set(state_key, str(new_score))
-
-    return {
-        "status": "success",
-        "learned_state": state_key,
-        "updated_score": new_score,
-        "message": "GAMA AI tecrübeyi buluta kaydetti!"
+    # Gama AI Karar Algoritması
+    target_pos = {
+        "x": round(data.enemy_position["x"] + data.enemy_velocity["x"] * 0.5, 2),
+        "y": data.enemy_position["y"],
+        "z": round(data.enemy_position["z"] + data.enemy_velocity["z"] * 0.5, 2)
     }
+
+    action = "APPROACH"
+    if distance < 5.0:
+        action = "BLOCK_AND_COUNTER"
+    elif distance > 25.0:
+        action = "PATROL_AND_SEARCH"
+
+    response_payload = {
+        "key": data.key,
+        "action": action,
+        "target_position": target_pos,
+        "message": f"{data.key}, hedef konuma ({target_pos['x']}, {target_pos['z']}) hareket et ve '{action}' uygula!"
+    }
+
+    # Buluta o anki canlı durumu kaydet
+    redis_set(f"live_state:{data.key}", json.dumps(response_payload))
+
+    return response_payload
